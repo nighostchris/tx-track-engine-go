@@ -7,13 +7,34 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
 	const nodeUrl = "https://alfajores-forno.celo-testnet.org"
 
-	blockNumber := GetLatestBlock(nodeUrl)
-	GetBlockByNumber(nodeUrl, blockNumber)
+	threads := make(chan bool, 5)
+	var lastProcessedBlock = "0x8bc540"
+
+	for {
+		blockNumber := GetLatestBlock(nodeUrl)
+
+		if blockNumber >= lastProcessedBlock && len(threads) < 5 {
+			var poolCapacity = 5 - len(threads)
+
+			for i := 0; i < poolCapacity; i++ {
+				midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
+				targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
+
+				go GetBlockByNumber(nodeUrl, targetBlock, threads)
+
+				threads <- true
+				lastProcessedBlock = targetBlock
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
 }
 
 type EvmRpcRequest struct {
@@ -53,7 +74,7 @@ type EvmGetBlockByNumberResponse struct {
 	Result  EvmBlock `json:"result"`
 }
 
-func GetBlockByNumber(nodeUrl string, block string) interface{} {
+func GetBlockByNumber(nodeUrl string, block string, pool chan bool) interface{} {
 	const logHead = "[Celo Node RPC] GetBlockByNumber - "
 
 	params, _ := json.Marshal(&EvmRpcRequest{
@@ -67,6 +88,7 @@ func GetBlockByNumber(nodeUrl string, block string) interface{} {
 
 	if error != nil {
 		fmt.Printf("%s %s\n", logHead, error.Error())
+		<-pool
 		return ""
 	}
 
@@ -74,6 +96,7 @@ func GetBlockByNumber(nodeUrl string, block string) interface{} {
 
 	if response.StatusCode != 200 {
 		fmt.Printf("%s %s\n", logHead, response.Status)
+		<-pool
 		return ""
 	} else {
 		var data EvmGetBlockByNumberResponse
@@ -82,12 +105,14 @@ func GetBlockByNumber(nodeUrl string, block string) interface{} {
 
 		if decodeErr == nil {
 			fmt.Printf("%s Block #%s have %d transactions\n", logHead, hexToDec(block), len(data.Result.Transactions))
+			<-pool
 			return data.Result
 		}
 
 		fmt.Printf("%s %s\n", logHead, decodeErr.Error())
 	}
 
+	<-pool
 	return ""
 }
 
