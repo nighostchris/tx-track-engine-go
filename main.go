@@ -9,12 +9,14 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/nighostchris/tx-track-engine-go/blockchain"
 	"github.com/nighostchris/tx-track-engine-go/database"
+	"github.com/nighostchris/tx-track-engine-go/database/models"
 )
 
 func main() {
 	dbUrl := os.Getenv("DATABASE_CONNECTION")
 
 	var trackers int
+	var lastProcessedBlock string
 
 	if threadPool, getThreadPoolError := strconv.Atoi(os.Getenv("THREAD_POOL")); getThreadPoolError != nil {
 		trackers = 5
@@ -41,22 +43,64 @@ func main() {
 	threads := make(chan bool, trackers)
 	processed := make(chan string, trackers)
 
-	var lastProcessedBlock = "0x8bc540"
+	// Determine whether the pipeline should start from latest block or last processed block in database
+	gotLastProcessedBlock := false
+
+	for !gotLastProcessedBlock {
+		lastProcessedBlockInDatabase, getBlocksError := models.GetBlocks(db, "celo_blocks", 1)
+
+		if getBlocksError != nil {
+			fmt.Println(getBlocksError.Error())
+		} else {
+			if len(lastProcessedBlockInDatabase) == 0 {
+				gotLatestBlock := false
+
+				for !gotLatestBlock {
+					blockNumber, getLatestBlockError := blockchain.GetLatestBlock(nodeUrl)
+
+					if getLatestBlockError != nil {
+						fmt.Println(getLatestBlockError.Error())
+					} else {
+						lastProcessedBlock = blockNumber
+						fmt.Printf("Will be using latest block from blockchain node as starting point - %s\n", lastProcessedBlock)
+						gotLastProcessedBlock = true
+						gotLatestBlock = true
+					}
+				}
+			} else {
+				lastProcessedBlock = "0x" + strconv.FormatInt(lastProcessedBlockInDatabase[0].Height, 16)
+				fmt.Printf("Will be using last processed block from database as starting point - %s\n", lastProcessedBlock)
+				gotLastProcessedBlock = true
+			}
+		}
+	}
 
 	go releaseThread(threads, processed, false)
 
 	for {
-		// blockNumber, getLatestBlockError := blockchain.GetLatestBlock(nodeUrl)
-		blockNumber := "0x8bc549"
+		var blockNumber string
+		gotLatestBlock := false
 
-		// if getLatestBlockError != nil {
-		// 	fmt.Println(getLatestBlockError.Error())
-		// }
+		for !gotLatestBlock {
+			latestBlock, getLatestBlockError := blockchain.GetLatestBlock(nodeUrl)
+
+			if getLatestBlockError != nil {
+				fmt.Println(getLatestBlockError.Error())
+			} else {
+				blockNumber = latestBlock
+				gotLatestBlock = true
+			}
+		}
 
 		if blockNumber >= lastProcessedBlock && len(threads) < trackers {
+			blockNumberDec, _ := strconv.ParseInt(blockNumber[2:], 16, 64)
+			lastProcessedBlockDec, _ := strconv.ParseInt(lastProcessedBlock[2:], 16, 64)
+
+			fmt.Printf("[Main] Found block difference of %d\n", blockNumberDec-lastProcessedBlockDec+1)
+
 			var poolCapacity = trackers - len(threads)
 
-			for i := 0; i < poolCapacity; i++ {
+			for i := 0; i < poolCapacity && lastProcessedBlock <= blockNumber; i++ {
 				midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
 				targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
 

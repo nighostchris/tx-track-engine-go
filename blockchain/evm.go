@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 )
 
 type EvmTransaction struct {
@@ -46,17 +44,6 @@ type EvmGetBlockByNumberResponse struct {
 	Result  EvmBlock `json:"result"`
 }
 
-func hexToDec(input string) (decStr string, err error) {
-	postProcessed := strings.Replace(input, "0x", "", -1)
-	decimal, decParseError := strconv.ParseUint(postProcessed, 16, 64)
-
-	if decParseError != nil {
-		return "", decParseError
-	}
-
-	return strconv.FormatUint(decimal, 10), nil
-}
-
 func GetLatestBlock(nodeUrl string) (block string, err error) {
 	const logHead = "[EVM Node RPC] GetLatestBlock -"
 
@@ -86,7 +73,7 @@ func GetLatestBlock(nodeUrl string) (block string, err error) {
 			return "", fmt.Errorf("%s %s", logHead, decodeErr.Error())
 		}
 
-		decBlock, _ := hexToDec(data.Result)
+		decBlock, _ := HexToDec(data.Result)
 
 		fmt.Printf("%s %s (%s)\n", logHead, decBlock, data.Result)
 		return data.Result, nil
@@ -95,7 +82,7 @@ func GetLatestBlock(nodeUrl string) (block string, err error) {
 
 func GetBlockByNumber(nodeUrl string, number string) (block EvmBlock, err error) {
 	const logHead = "[EVM Node RPC] GetBlockByNumber - "
-	decNumber, _ := hexToDec(number)
+	decNumber, _ := HexToDec(number)
 
 	fmt.Printf("%s%s\n", logHead, decNumber)
 
@@ -133,7 +120,7 @@ func GetBlockByNumber(nodeUrl string, number string) (block EvmBlock, err error)
 
 func ProcessBlock(nodeUrl string, number string, addresses []string, processed chan string) {
 	const logHead = "[EVM Process Block]"
-	decNumber, _ := hexToDec(number)
+	decNumber, _ := HexToDec(number)
 
 	block, getBlockByNumberError := GetBlockByNumber(nodeUrl, number)
 
