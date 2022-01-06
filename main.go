@@ -5,28 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/nighostchris/tx-track-engine-go/database"
 )
 
 func main() {
-	connectionParams := database.DatabaseConnectionParams{
-		Username: "root",
-		Password: "root",
-		Host:     "0.0.0.0",
-		Port:     "5432",
-		Database: "postgres",
-	}
+	dbUrl := os.Getenv("DATABASE_CONNECTION")
 
-	db, err := database.Connect(connectionParams)
+	// Connect to the database
+	db, err := database.Connect(dbUrl)
 
 	if err != nil {
 		fmt.Println(err.Error())
-	} else {
-		fmt.Println(db)
 	}
+
+	// Auto database migration
+	migrate := database.Migrate(db)
+
+	fmt.Println(migrate)
+
+	defer db.Close()
 
 	// const nodeUrl = "https://alfajores-forno.celo-testnet.org"
 

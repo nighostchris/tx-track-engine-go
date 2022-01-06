@@ -4,40 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/golang-migrate/migrate"
+	"github.com/golang-migrate/migrate/database/postgres"
+	_ "github.com/golang-migrate/migrate/source/file"
 	_ "github.com/lib/pq"
 )
 
-type DatabaseConnectionParams struct {
-	Username string
-	Password string
-	Host     string
-	Port     string
-	Database string
-}
-
-func Connect(params DatabaseConnectionParams) (db *sql.DB, err error) {
-	var connectionUrl string
-
-	if params.Port != "" {
-		connectionUrl = fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			params.Username,
-			params.Password,
-			params.Host,
-			params.Port,
-			params.Database,
-		)
-	} else {
-		connectionUrl = fmt.Sprintf(
-			"postgres://%s:%s@%s/%s?sslmode=disable",
-			params.Username,
-			params.Password,
-			params.Host,
-			params.Database,
-		)
-	}
-
-	db, paramsError := sql.Open("postgres", connectionUrl)
+func Connect(dbUrl string) (db *sql.DB, err error) {
+	db, paramsError := sql.Open("postgres", dbUrl)
 
 	if paramsError != nil {
 		return nil, fmt.Errorf("[Database Connection] %s", paramsError.Error())
@@ -48,4 +22,21 @@ func Connect(params DatabaseConnectionParams) (db *sql.DB, err error) {
 	}
 
 	return db, nil
+}
+
+func Migrate(db *sql.DB) string {
+	driver, initDriverError := postgres.WithInstance(db, &postgres.Config{})
+
+	if initDriverError != nil {
+		return fmt.Sprintf("[Database Migration] Failed to initialize driver: %s", initDriverError.Error())
+	} else {
+		m, migrationError := migrate.NewWithDatabaseInstance("file://migrations", "blockchain", driver)
+
+		if migrationError != nil {
+			return fmt.Sprintf("[Database Migration] Failed to migrate: %s", migrationError.Error())
+		} else {
+			m.Up()
+			return "[Database Migration] Done"
+		}
+	}
 }
