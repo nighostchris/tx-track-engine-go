@@ -1,20 +1,26 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
-	"strings"
+	"time"
 
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/nighostchris/tx-track-engine-go/blockchain"
 	"github.com/nighostchris/tx-track-engine-go/database"
 )
 
 func main() {
 	dbUrl := os.Getenv("DATABASE_CONNECTION")
+
+	var trackers int
+
+	if threadPool, getThreadPoolError := strconv.Atoi(os.Getenv("THREAD_POOL")); getThreadPoolError != nil {
+		trackers = 5
+	} else {
+		trackers = threadPool
+	}
 
 	// Connect to the database
 	db, err := database.Connect(dbUrl)
@@ -30,156 +36,57 @@ func main() {
 
 	defer db.Close()
 
-	// const nodeUrl = "https://alfajores-forno.celo-testnet.org"
+	const nodeUrl = "https://alfajores-forno.celo-testnet.org"
 
-	// threads := make(chan bool, 5)
-	// var lastProcessedBlock = "0x8bc540"
+	threads := make(chan bool, trackers)
+	processed := make(chan string, trackers)
 
-	// for {
-	// 	blockNumber := GetLatestBlock(nodeUrl)
+	var lastProcessedBlock = "0x8bc540"
 
-	// 	if blockNumber >= lastProcessedBlock && len(threads) < 5 {
-	// 		var poolCapacity = 5 - len(threads)
+	go releaseThread(threads, processed, false)
 
-	// 		for i := 0; i < poolCapacity; i++ {
-	// 			midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
-	// 			targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
+	for {
+		// blockNumber, getLatestBlockError := blockchain.GetLatestBlock(nodeUrl)
+		blockNumber := "0x8bc549"
 
-	// 			go GetBlockByNumber(nodeUrl, targetBlock, threads)
+		// if getLatestBlockError != nil {
+		// 	fmt.Println(getLatestBlockError.Error())
+		// }
 
-	// 			threads <- true
-	// 			lastProcessedBlock = targetBlock
-	// 		}
-	// 	}
+		if blockNumber >= lastProcessedBlock && len(threads) < trackers {
+			var poolCapacity = trackers - len(threads)
 
-	// 	time.Sleep(5 * time.Second)
-	// }
-}
+			for i := 0; i < poolCapacity; i++ {
+				midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
+				targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
 
-type EvmRpcRequest struct {
-	Id      string        `json:"id"`
-	JsonRpc string        `json:"jsonrpc"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
-}
+				go blockchain.ProcessBlock(nodeUrl, targetBlock, []string{}, processed)
 
-type EvmGetLatestBlockResponse struct {
-	Id      string `json:"id"`
-	JsonRpc string `json:"jsonrpc"`
-	Result  string `json:"result"`
-}
-
-type EvmTransaction struct {
-	From        string `json:"from"`
-	GasPrice    string `json:"gasPrice"`
-	FeeCurrency string `json:"feeCurrency"`
-	Hash        string `json:"hash"`
-	Input       string `json:"input"`
-	Nonce       string `json:"nonce"`
-	To          string `json:"to"`
-	Value       string `json:"value"`
-}
-
-type EvmBlock struct {
-	Hash         string           `json:"hash"`
-	Number       string           `json:"number"`
-	Timestamp    string           `json:"timestamp"`
-	Transactions []EvmTransaction `json:"transactions"`
-}
-
-type EvmGetBlockByNumberResponse struct {
-	Id      string   `json:"id"`
-	JsonRpc string   `json:"jsonrpc"`
-	Result  EvmBlock `json:"result"`
-}
-
-func GetBlockByNumber(nodeUrl string, block string, pool chan bool) interface{} {
-	const logHead = "[Celo Node RPC] GetBlockByNumber - "
-
-	params, _ := json.Marshal(&EvmRpcRequest{
-		JsonRpc: "2.0",
-		Method:  "eth_getBlockByNumber",
-		Params:  []interface{}{block, true},
-		Id:      "1",
-	})
-
-	response, error := http.Post(nodeUrl, "application/json", bytes.NewBuffer(params))
-
-	if error != nil {
-		fmt.Printf("%s %s\n", logHead, error.Error())
-		<-pool
-		return ""
-	}
-
-	defer response.Body.Close()
-
-	if response.StatusCode != 200 {
-		fmt.Printf("%s %s\n", logHead, response.Status)
-		<-pool
-		return ""
-	} else {
-		var data EvmGetBlockByNumberResponse
-
-		decodeErr := json.NewDecoder(response.Body).Decode(&data)
-
-		if decodeErr == nil {
-			fmt.Printf("%s Block #%s have %d transactions\n", logHead, hexToDec(block), len(data.Result.Transactions))
-			<-pool
-			return data.Result
+				threads <- true
+				lastProcessedBlock = targetBlock
+			}
 		}
 
-		fmt.Printf("%s %s\n", logHead, decodeErr.Error())
+		time.Sleep(5 * time.Second)
 	}
-
-	<-pool
-	return ""
 }
 
-func GetLatestBlock(nodeUrl string) string {
-	const logHead = "[Celo Node RPC] GetLatestBlock -"
-
-	params, _ := json.Marshal(&EvmRpcRequest{
-		JsonRpc: "2.0",
-		Method:  "eth_blockNumber",
-		Params:  []interface{}{},
-		Id:      "1",
-	})
-
-	response, error := http.Post(nodeUrl, "application/json", bytes.NewBuffer(params))
-
-	if error != nil {
-		fmt.Printf("%s %s\n", logHead, error.Error())
-		return ""
+func releaseThread(threads chan bool, processed chan string, verbose bool) {
+	const logHead = "[Release Thread] "
+	if verbose {
+		fmt.Printf("%sStarts\n", logHead)
 	}
 
-	defer response.Body.Close()
-
-	if response.StatusCode != 200 {
-		fmt.Printf("%s %s\n", logHead, response.Status)
-		return ""
-	} else {
-		var data EvmGetLatestBlockResponse
-
-		decodeErr := json.NewDecoder(response.Body).Decode(&data)
-
-		if decodeErr == nil {
-			fmt.Printf("%s %s (%s)\n", logHead, data.Result, hexToDec(data.Result))
-			return data.Result
+	for {
+		if verbose {
+			fmt.Printf("%s%d threads can be released\n", logHead, len(processed))
 		}
 
-		fmt.Printf("%s %s\n", logHead, decodeErr.Error())
+		for i := 0; i < len(processed); i++ {
+			<-threads
+			<-processed
+		}
+
+		time.Sleep(1 * time.Second)
 	}
-
-	return ""
-}
-
-func hexToDec(input string) string {
-	postProcessed := strings.Replace(input, "0x", "", -1)
-	decimal, error := strconv.ParseUint(postProcessed, 16, 64)
-
-	if error != nil {
-		fmt.Println(error)
-	}
-
-	return strconv.FormatUint(decimal, 10)
 }
