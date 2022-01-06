@@ -7,34 +7,51 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/nighostchris/tx-track-engine-go/database"
 )
 
 func main() {
-	const nodeUrl = "https://alfajores-forno.celo-testnet.org"
-
-	threads := make(chan bool, 5)
-	var lastProcessedBlock = "0x8bc540"
-
-	for {
-		blockNumber := GetLatestBlock(nodeUrl)
-
-		if blockNumber >= lastProcessedBlock && len(threads) < 5 {
-			var poolCapacity = 5 - len(threads)
-
-			for i := 0; i < poolCapacity; i++ {
-				midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
-				targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
-
-				go GetBlockByNumber(nodeUrl, targetBlock, threads)
-
-				threads <- true
-				lastProcessedBlock = targetBlock
-			}
-		}
-
-		time.Sleep(5 * time.Second)
+	connectionParams := database.DatabaseConnectionParams{
+		Username: "root",
+		Password: "root",
+		Host:     "0.0.0.0",
+		Port:     "5432",
+		Database: "postgres",
 	}
+
+	db, err := database.Connect(connectionParams)
+
+	if err != nil {
+		fmt.Println(err.Error())
+	} else {
+		fmt.Println(db)
+	}
+
+	// const nodeUrl = "https://alfajores-forno.celo-testnet.org"
+
+	// threads := make(chan bool, 5)
+	// var lastProcessedBlock = "0x8bc540"
+
+	// for {
+	// 	blockNumber := GetLatestBlock(nodeUrl)
+
+	// 	if blockNumber >= lastProcessedBlock && len(threads) < 5 {
+	// 		var poolCapacity = 5 - len(threads)
+
+	// 		for i := 0; i < poolCapacity; i++ {
+	// 			midwayBlock, _ := strconv.ParseUint(lastProcessedBlock[2:], 16, 64)
+	// 			targetBlock := "0x" + strconv.FormatUint(midwayBlock+1, 16)
+
+	// 			go GetBlockByNumber(nodeUrl, targetBlock, threads)
+
+	// 			threads <- true
+	// 			lastProcessedBlock = targetBlock
+	// 		}
+	// 	}
+
+	// 	time.Sleep(5 * time.Second)
+	// }
 }
 
 type EvmRpcRequest struct {
