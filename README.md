@@ -85,3 +85,57 @@ export PATH=$PATH:$GOPATH/bin
 [EVM Node RPC] GetBlockByNumber -  Block #9160006 have 3 transactions
 [EVM Process Block] Finished processing block 9160006 and found 0 interested transaction(s)
 ```
+
+## Database Schema
+
+```bash
+blockchain=# \d blockchains;
+                                       Table "public.blockchains"
+   Column   |           Type           | Collation | Nullable |                 Default                 
+------------+--------------------------+-----------+----------+-----------------------------------------
+ id         | integer                  |           | not null | nextval('blockchains_id_seq'::regclass)
+ name       | character varying(100)   |           | not null | 
+ created_at | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ updated_at | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "blockchains_pkey" PRIMARY KEY, btree (id)
+Referenced by:
+    TABLE "transactions" CONSTRAINT "transactions_blockchain_fkey" FOREIGN KEY (blockchain) REFERENCES blockchains(id)
+
+blockchain=# \d celo_blocks;
+                                       Table "public.celo_blocks"
+   Column   |           Type           | Collation | Nullable |                 Default                 
+------------+--------------------------+-----------+----------+-----------------------------------------
+ id         | integer                  |           | not null | nextval('celo_blocks_id_seq'::regclass)
+ height     | bigint                   |           | not null | 
+ hash       | character varying(100)   |           | not null | 
+ timestamp  | bigint                   |           | not null | 
+ created_at | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ updated_at | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "celo_blocks_pkey" PRIMARY KEY, btree (id)
+    "celo_blocks_height_key" UNIQUE CONSTRAINT, btree (height)
+
+blockchain=# \d transactions;
+                                        Table "public.transactions"
+    Column    |           Type           | Collation | Nullable |                 Default                  
+--------------+--------------------------+-----------+----------+------------------------------------------
+ id           | integer                  |           | not null | nextval('transactions_id_seq'::regclass)
+ block_height | bigint                   |           | not null | 
+ hash         | character varying(100)   |           | not null | 
+ origin       | character varying(100)   |           | not null | 
+ destination  | character varying(100)   |           | not null | 
+ contract     | character varying(100)   |           | not null | 
+ value        | character varying(100)   |           | not null | 
+ type         | smallint                 |           | not null | 
+ memo         | text                     |           | not null | 
+ blockchain   | smallint                 |           |          | 
+ timestamp    | bigint                   |           | not null | 
+ created_at   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ updated_at   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "transactions_pkey" PRIMARY KEY, btree (id)
+    "transactions_block_height_key" UNIQUE CONSTRAINT, btree (block_height)
+Foreign-key constraints:
+    "transactions_blockchain_fkey" FOREIGN KEY (blockchain) REFERENCES blockchains(id)
+```
